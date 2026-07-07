@@ -218,6 +218,7 @@ class BailianTTSProvider(TTSProvider):
         logger.info("Bailian TTS: wrote %d bytes to %s", len(audio_data), wav_path)
 
         # Convert to MP3 if requested and ffmpeg is available
+        # Uses mono + VBR (q:a 5) for voice-optimized bandwidth
         want_format = (format or "").lower()
         if want_format in ("mp3",) and wav_path != output_path:
             ffmpeg = shutil.which("ffmpeg")
@@ -225,12 +226,14 @@ class BailianTTSProvider(TTSProvider):
                 try:
                     subprocess.run(
                         [ffmpeg, "-y", "-i", wav_path,
-                         "-codec:a", "libmp3lame", "-b:a", "128k",
+                         "-ac", "1",                    # mono for voice
+                         "-codec:a", "libmp3lame",
+                         "-q:a", "5",                   # VBR ~80kbps avg
                          output_path],
                         capture_output=True, timeout=30, check=True,
                     )
                     os.remove(wav_path)  # clean up intermediate WAV
-                    logger.info("Bailian TTS: converted WAV→MP3 (%d bytes)",
+                    logger.info("Bailian TTS: converted WAV→MP3 (mono VBR, %d bytes)",
                                 os.path.getsize(output_path))
                     final_path = output_path
                 except Exception as exc:
