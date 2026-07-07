@@ -13,11 +13,10 @@ Follow this decision tree for EVERY reply:
 
 ### Decision tree
 
-0. **Does your answer contain exact numbers, statistics, or data the user needs to read precisely?**
-   → Do NOT call `text_to_speech`. Write the answer as text. The user needs to see the exact figures. Approximate/summary numbers ("大约十几万", "翻了一倍") are OK for voice.
-
 1. **Can your entire answer fit in ~30 Chinese characters of speech?**
-   → Call `text_to_speech` with that text. That's it. NO text output. Done.
+   → First check: does it contain exact numbers, statistics, or data the user needs to read precisely?
+      - **Yes** → Do NOT call `text_to_speech`. Write the answer as text.
+      - **No** → Call `text_to_speech` with that text. That's it. NO text output. Done.
 
 2. **Do you need more than ~80 characters to answer?**
    → Call `text_to_speech` with a 10–30 char summary first (e.g. "查到了"/"搞定了"),
