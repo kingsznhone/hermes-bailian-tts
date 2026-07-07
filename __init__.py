@@ -203,24 +203,22 @@ class BailianTTSProvider(TTSProvider):
             raise RuntimeError(f"Bailian TTS audio download failed: {exc}") from exc
 
         # ── Step 3: Write audio and convert format if needed ──
-        # Bailian API always returns WAV. Write to WAV first, then
-        # convert to MP3 if requested (QQ Bot voice messages need MP3).
+        # Bailian API always returns WAV. Save as WAV on a temp path,
+        # then convert to MP3 at output_path. This guarantees the final
+        # file at output_path always exists (either MP3 or WAV-as-fallback).
         import shutil
-        import tempfile
         import subprocess
 
-        wav_path = output_path
-        if not wav_path.lower().endswith(".wav"):
-            wav_path = output_path.rsplit(".", 1)[0] + ".wav"
+        wav_path = output_path + ".wav"
 
         with open(wav_path, "wb") as f:
             f.write(audio_data)
-        logger.info("Bailian TTS: wrote %d bytes to %s", len(audio_data), wav_path)
+        logger.info("Bailian TTS: wrote %d bytes WAV -> %s", len(audio_data), wav_path)
 
-        # Convert to MP3 if requested and ffmpeg is available
-        # Uses mono + VBR (q:a 5) for voice-optimized bandwidth
         want_format = (format or "").lower()
-        if want_format in ("mp3",) and wav_path != output_path:
+        converted = False
+
+        if want_format in ("mp3",):
             ffmpeg = shutil.which("ffmpeg")
             if ffmpeg:
                 try:
@@ -232,26 +230,35 @@ class BailianTTSProvider(TTSProvider):
                          output_path],
                         capture_output=True, timeout=30, check=True,
                     )
-                    os.remove(wav_path)  # clean up intermediate WAV
-                    logger.info("Bailian TTS: converted WAV→MP3 (mono VBR, %d bytes)",
-                                os.path.getsize(output_path))
-                    final_path = output_path
+                    logger.info("Bailian TTS: WAV→MP3 done (%d bytes -> %d bytes)",
+                                len(audio_data), os.path.getsize(output_path))
+                    converted = True
                 except Exception as exc:
-                    logger.warning("Bailian TTS: ffmpeg conversion failed, falling back to WAV: %s", exc)
-                    final_path = wav_path
+                    logger.warning("Bailian TTS: ffmpeg conversion failed: %s", exc)
             else:
-                logger.info("Bailian TTS: ffmpeg not found, keeping WAV format")
-                final_path = wav_path
-        else:
-            final_path = wav_path
+                logger.warning("Bailian TTS: ffmpeg not found, cannot convert to MP3")
+
+        if not converted:
+            # Fallback: copy WAV to output_path so the file always exists
+            # at the expected location.
+            import shutil as sh
+            sh.copy2(wav_path, output_path)
+            logger.info("Bailian TTS: WAV fallback -> %s (%d bytes)",
+                        output_path, os.path.getsize(output_path))
+
+        # Clean up intermediate WAV
+        try:
+            os.remove(wav_path)
+        except OSError:
+            pass
 
         # Log usage for monitoring
         usage = result.get("usage", {})
-        logger.debug("Bailian TTS usage: %s chars (request_id=%s)",
+        logger.debug("Bailian TTS: usage %s chars (request_id=%s)",
                      usage.get("characters", "?"),
                      result.get("request_id", "?"))
 
-        return final_path
+        return output_path
 
 
 # ---------------------------------------------------------------------------
