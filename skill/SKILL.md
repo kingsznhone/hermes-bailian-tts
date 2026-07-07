@@ -1,7 +1,7 @@
 ---
 name: bailian-tts-usage
 description: "Deploy and tune the Bailian (百炼) Qwen-TTS plugin for Hermes — voice selection, instruction control, platform delivery, and agent behavior."
-version: 1.0.0
+version: 1.1.0
 author: zhn
 tags: [tts, bailian, qwen, voice, gateway, webui, qqbot]
 platforms: [linux, macos]
@@ -94,7 +94,9 @@ On QQ Bot, Telegram, and WebUI, `text_to_speech` delivers audible voice.
 Follow this decision tree for EVERY reply:
 
 1. **Answer ≤ 30 Chinese chars?**
-   → Call `text_to_speech` with that text. NO text output. Done.
+   → First check: does it contain exact numbers/data the user needs to read precisely?
+      - **Yes** → Do NOT call `text_to_speech`. Write as text.
+      - **No** → Call `text_to_speech` with that text. NO text output. Done.
 
 2. **Answer > 80 chars?**
    → Call `text_to_speech` with 10–30 char summary, then write full text.
@@ -126,7 +128,9 @@ Billed per input character, output free. Qwen3-TTS-Instruct-Flash ≈ **¥1 / 10
 | Audio won't play in WebUI | File must be under `$HERMES_HOME` or `/tmp` |
 | Voice + text for short replies | SOUL.md uses passive language → use "NO text output. Done." |
 | 401 on `/api/media` | Auth enabled — `<audio>` needs session cookie |
-| MP3 conversion fails | `apt install ffmpeg` (falls back to WAV if unavailable) |
+| ffmpeg not found | `apt install ffmpeg` — plugin copies WAV to output_path as fallback (bandwidth ~4× MP3) |
+| .mp3 file is actually WAV | Shouldn't happen with v1.1.1+. Plugin always writes WAV to a distinct `.wav` path, runs ffmpeg for MP3, and only copy-falls-back on failure. Run `file /path/to/output.mp3` to verify. |
+| Plugin code changes not taking effect | Python caches imported modules in memory — the gateway process won't pick up plugin changes until it restarts. Deleting `__pycache__/` is insufficient. Run `hermes gateway restart` from a shell **outside** the gateway (not from inside QQ Bot / agent chat). The gateway blocks self-restart (SIGTERM propagation protection). |
 
 ## Reference
 
