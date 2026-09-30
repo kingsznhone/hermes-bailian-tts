@@ -1,4 +1,4 @@
 name: tts-bailian
-version: 1.1.0
-description: "Aliyun Bailian (百炼) Qwen-TTS text-to-speech provider — wraps the DashScope HTTP API for voice synthesis with customizable voices, instruction control, and Chinese-native speech quality."
+version: 2.0.0
+description: "Aliyun Bailian (百炼) TTS provider — Qwen-Audio-TTS (qwen-audio-3.1-tts-flash) via the DashScope SpeechSynthesizer HTTP API. Instruction control, native MP3 output, Chinese-native voices."
 author: "kingsznhone@github.com"

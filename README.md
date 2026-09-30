@@ -2,7 +2,7 @@
 
 [English](README_EN.md) | 中文
 
-阿里云百炼 (Bailian / DashScope) Qwen-TTS 语音合成插件，让 Hermes Agent 通过网关平台（QQ Bot / Telegram 等）用高质量中文语音朗读回答。
+阿里云百炼 (Bailian / DashScope) Qwen-Audio-TTS 语音合成插件，让 Hermes Agent 通过网关平台（QQ Bot / Telegram 等）用高质量中文语音朗读回答。
 
 ## 最佳实践 ⚠️
 
@@ -24,9 +24,10 @@
 
 ## 特性
 
-- **Qwen3-TTS-Instruct-Flash** — 支持指令控制的 HTTP 语音合成
-- **7 种系统音色** — 中文男/女声 (Maia, Cherry, Stella, Harry, Liam) + 英文 (Emma, Henry)
+- **Qwen-Audio-3.1-TTS-Flash** — 支持指令控制的 HTTP 语音合成（百炼 SpeechSynthesizer 端点）
+- **17 种常用音色** — 中文（白清岚、安小岚、于小云…）、多方言/多语种（龙安欢、许南川）、英文（Emily、Ava）
 - **指令控制** — 用自然语言控制语速、情绪、风格（"用温柔的语气，语速稍慢"）
+- **原生 MP3 输出** — 服务端直出，无需本地转码
 - **纯 Python stdlib** — 零外部依赖，只用 `urllib`
 
 ## 安装
@@ -46,8 +47,8 @@ BAILIAN_TTS_INSTRUCTIONS=用温柔亲切的语气，语速正常   # 可选：�
 # 4. 配置 TTS provider (~/.hermes/config.yaml)
 tts:
   provider: bailian
-  voice: Maia
-  model: qwen3-tts-instruct-flash
+  voice: baiqinglan_v3.1
+  model: qwen-audio-3.1-tts-flash
 
 # 5. 重启 Hermes 或 /reset
 ```
@@ -65,9 +66,9 @@ tts:
 | 参数 | 默认值 | 说明 |
 |------|--------|------|
 | `tts.provider` | — | 设为 `bailian` |
-| `tts.voice` | `Maia` | 音色 ID（见下方音色表） |
-| `tts.model` | `qwen3-tts-instruct-flash` | 模型 ID |
-| `tts.instructions` | — | (仅 instruct 模型) 指令文本 |
+| `tts.voice` | `baiqinglan_v3.1` | 音色 ID（见下方音色表） |
+| `tts.model` | `qwen-audio-3.1-tts-flash` | 模型 ID |
+| `tts.instructions` | — | 指令文本（映射为 `input.instruction`） |
 
 ### 环境变量
 
@@ -85,22 +86,36 @@ tts:
 
 ## 音色
 
-| ID | 描述 | 语言 |
-|------|------|------|
-| `Maia` | 温柔女声 | 中文 |
-| `Cherry` | 活力女声 | 中文 |
-| `Stella` | 沉稳女声 | 中文 |
-| `Harry` | 儒雅男声 | 中文 |
-| `Liam` | 阳光男声 | 中文 |
-| `Emma` | 知性女声 | 英文 |
-| `Henry` | 磁性男声 | 英文 |
+音色与模型绑定（当前系列：qwen-audio-3.1-tts-flash）。完整列表见 [官方音色文档](https://docs.bailian.console.aliyun.com/zh/model-studio/qwen-audio-tts-voice-list)。
+
+| ID | 描述 |
+|------|------|
+| `baiqinglan_v3.1` | 白清岚 — 明亮清纯女声（默认） |
+| `anxiaolan_v3.1` | 安小岚 — 清甜纯净女声 |
+| `yuxiaoyun_v3.1` | 于小云 — 元气亲切女声 |
+| `xiaxiaochen_v3.1` | 夏小晨 — 元气明亮女声 |
+| `qiaoxiaojiao_v3.1` | 乔小娇 — 俏丽可爱女声 |
+| `wenhuaiqing_v3.1` | 温怀清 — 清亮柔和女声 |
+| `xieshurou_v3.1` | 谢舒柔 — 柔和知性女声 |
+| `xuyuyuan_v3.1` | 许玉远 — 知性成熟女声 |
+| `xiaoxingzhi_v3.1` | 萧行之 — 端庄贵气女声 |
+| `yeqinghe_v3.1` | 叶清禾 — 亲切温柔女声 |
+| `anyuqing_v3.1` | 安语晴 — 甜美女声 |
+| `anmingyuan_v3.1` | 安明远 — 清亮自然男声 |
+| `huozhuoshi_v3.1` | 霍拙石 — 清亮男声 |
+| `xunanchuan_v3.1` | 许南川 — 多方言/多语种男声 |
+| `longanhuan_v3.1` | 龙安欢 — 多方言/多语种女声 |
+| `Emily_v3.1` | 英式女声（英文） |
+| `Ava_v3.1` | 美式女声（英文） |
 
 ## 模型
 
 | ID | 指令控制 | 说明 |
 |------|:--:|------|
-| `qwen3-tts-instruct-flash` | ✓ | 推荐。支持自然语言调语速/情绪/风格 |
-| `qwen3-tts-flash` | ✗ | 基础版，固定风格 |
+| `qwen-audio-3.1-tts-flash` | ✓ | 推荐（默认）。SpeechSynthesizer 端点，原生 mp3/wav，按 Token 计费 |
+| `qwen-audio-3.0-tts-flash` | ✓ | 上一代，仍可用 |
+
+> 旧系列 `qwen3-tts-*` 支持已于 2.0.0 移除（模型退役）。
 
 ## 指令控制示例
 
@@ -119,7 +134,7 @@ tts:
 
 ### CLI / WebUI
 
-CLI 下 `/voice tts` 由框架层自动处理（全文截断 4000 字朗读）。WebUI 不支持插件音频内联播放，请使用浏览器自带的 🔊 按钮。
+CLI 下 `/voice tts` 由框架层自动处理（全文截断 4000 字朗读）。WebUI 通过 `/api/media` 内联播放。
 
 ### 脚本工具
 
@@ -145,19 +160,19 @@ hermes skills install \
 ## API 端点
 
 ```
-POST https://{workspace_id}.cn-beijing.maas.aliyuncs.com/api/v1/services/aigc/multimodal-generation/generation
+POST https://{workspace_id}.cn-beijing.maas.aliyuncs.com/api/v1/services/audio/tts/SpeechSynthesizer
 ```
 
 请求体：
 
 ```json
 {
-    "model": "qwen3-tts-instruct-flash",
+    "model": "qwen-audio-3.1-tts-flash",
     "input": {
         "text": "待合成文本",
-        "voice": "Maia",
-        "language_type": "Chinese",
-        "instructions": "用温柔的语气"
+        "voice": "baiqinglan_v3.1",
+        "format": "mp3",
+        "instruction": "用温柔的语气"
     }
 }
 ```
@@ -166,21 +181,26 @@ POST https://{workspace_id}.cn-beijing.maas.aliyuncs.com/api/v1/services/aigc/mu
 
 ```json
 {
-    "request_id": "0e6ea46e-1332-9ed3-8f94-0e8de08f72e5",
+    "request_id": "461e4371-7286-9639-9905-c0bd93b38dd5",
     "output": {
+        "finish_reason": "stop",
         "audio": {
-            "url": "http://dashscope-xxx.oss-cn-beijing.aliyuncs.com/..."
+            "url": "http://dashscope-result-bj.oss-cn-beijing.aliyuncs.com/....mp3?...",
+            "id": "audio_461e4371-7286-9639-9905-c0bd93b38dd5",
+            "expires_at": 1790855968
         }
     },
     "usage": {
-        "characters": 22
+        "input_tokens": 28,
+        "output_tokens": 64,
+        "total_tokens": 92
     }
 }
 ```
 
 ## 计费
 
-按输入字符计费，输出不计费。Qwen3-TTS-Instruct-Flash 约 **1 元/万字符**。
+`qwen-audio-3.1-tts-flash` 按 **Token** 计费（输入 + 输出 Token，见响应 `usage` 字段）。
 
 参考：[阿里云百炼计费文档](https://help.aliyun.com/zh/model-studio/billing-for-model-studio)
 
@@ -222,6 +242,7 @@ hermes-bailian-tts/
 
 - [Hermes 自定义 TTS 集成 Skill](https://github.com/nesquena/hermes-agent) — 通用 TTS 接入框架指南
 - [阿里云百炼语音合成文档](https://help.aliyun.com/zh/model-studio/tts-model/)
+- [Qwen-Audio-TTS HTTP API 参考](https://docs.bailian.console.aliyun.com/zh/model-studio/qwen-audio-tts-http-api)
 - [QQ Bot API 文档](https://bot.q.qq.com/wiki/develop/api-v2/)
 
 ## 许可

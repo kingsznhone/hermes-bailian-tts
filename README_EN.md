@@ -2,7 +2,7 @@
 
 [中文](README.md) | English
 
-Aliyun Bailian (DashScope) Qwen-TTS voice synthesis plugin for Hermes Agent. Delivers high-quality Chinese text-to-speech via gateway platforms (QQ Bot, Telegram, etc.).
+Aliyun Bailian (DashScope) Qwen-Audio-TTS voice synthesis plugin for Hermes Agent. Delivers high-quality Chinese text-to-speech via gateway platforms (QQ Bot, Telegram, etc.).
 
 ## Best Practices ⚠️
 
@@ -24,9 +24,10 @@ Before enabling, configure `SOUL.md` so the agent acts like a secretary: brief s
 
 ## Features
 
-- **Qwen3-TTS-Instruct-Flash** — HTTP voice synthesis with instruction control
-- **7 system voices** — Chinese male/female (Maia, Cherry, Stella, Harry, Liam) + English (Emma, Henry)
+- **Qwen-Audio-3.1-TTS-Flash** — HTTP voice synthesis with instruction control (Bailian SpeechSynthesizer endpoint)
+- **17 curated system voices** — Chinese (Baiqinglan, Anxiaolan, Yuxiaoyun...), multi-dialect/multi-lingual (Longanhuan, Xunanchuan), English (Emily, Ava)
 - **Instruction control** — Natural language control over speed, emotion, style ("speak in a gentle, warm tone")
+- **Native MP3 output** — straight from the service, no local transcoding
 - **Zero dependencies** — Pure Python stdlib, uses `urllib` only
 
 ## Installation
@@ -46,8 +47,8 @@ BAILIAN_TTS_INSTRUCTIONS=Speak in a gentle, warm tone   # Optional: global instr
 # 4. Configure TTS provider (~/.hermes/config.yaml)
 tts:
   provider: bailian
-  voice: Maia
-  model: qwen3-tts-instruct-flash
+  voice: baiqinglan_v3.1
+  model: qwen-audio-3.1-tts-flash
 
 # 5. Restart Hermes or /reset
 ```
@@ -65,9 +66,9 @@ tts:
 | Parameter | Default | Description |
 |------|--------|------|
 | `tts.provider` | — | Set to `bailian` |
-| `tts.voice` | `Maia` | Voice ID (see voice table) |
-| `tts.model` | `qwen3-tts-instruct-flash` | Model ID |
-| `tts.instructions` | — | (instruct models only) Instruction text |
+| `tts.voice` | `baiqinglan_v3.1` | Voice ID (see voice table) |
+| `tts.model` | `qwen-audio-3.1-tts-flash` | Model ID |
+| `tts.instructions` | — | Instruction text (mapped to `input.instruction`) |
 
 ### Environment Variables
 
@@ -85,22 +86,36 @@ tts:
 
 ## Voices
 
-| ID | Description | Language |
-|------|------|------|
-| `Maia` | Gentle female | Chinese |
-| `Cherry` | Energetic female | Chinese |
-| `Stella` | Composed female | Chinese |
-| `Harry` | Refined male | Chinese |
-| `Liam` | Bright male | Chinese |
-| `Emma` | Intellectual female | English |
-| `Henry` | Deep male | English |
+Voices are bound to the model family (current: qwen-audio-3.1-tts-flash). Full list: [official voice docs](https://docs.bailian.console.aliyun.com/zh/model-studio/qwen-audio-tts-voice-list).
+
+| ID | Description |
+|------|------|
+| `baiqinglan_v3.1` | Baiqinglan — bright & pure female (default) |
+| `anxiaolan_v3.1` | Anxiaolan — sweet & clear female |
+| `yuxiaoyun_v3.1` | Yuxiaoyun — lively & friendly female |
+| `xiaxiaochen_v3.1` | Xiaxiaochen — bright & energetic female |
+| `qiaoxiaojiao_v3.1` | Qiaoxiaojiao — playful & cute female |
+| `wenhuaiqing_v3.1` | Wenhuaiqing — clear & soft female |
+| `xieshurou_v3.1` | Xieshurou — soft & intellectual female |
+| `xuyuyuan_v3.1` | Xuyuyuan — mature & sophisticated female |
+| `xiaoxingzhi_v3.1` | Xiaoxingzhi — elegant & dignified female |
+| `yeqinghe_v3.1` | Yeqinghe — warm & gentle female |
+| `anyuqing_v3.1` | Anyuqing — sweet female |
+| `anmingyuan_v3.1` | Anmingyuan — clear & natural male |
+| `huozhuoshi_v3.1` | Huozhuoshi — clear male |
+| `xunanchuan_v3.1` | Xunanchuan — multi-dialect male |
+| `longanhuan_v3.1` | Longanhuan — multi-dialect female |
+| `Emily_v3.1` | British English female |
+| `Ava_v3.1` | American English female |
 
 ## Models
 
 | ID | Instruction Control | Description |
 |------|:--:|------|
-| `qwen3-tts-instruct-flash` | ✓ | Recommended. Natural language style/speed/emotion control |
-| `qwen3-tts-flash` | ✗ | Basic, fixed style |
+| `qwen-audio-3.1-tts-flash` | ✓ | Recommended (default). SpeechSynthesizer endpoint, native mp3/wav, token-based billing |
+| `qwen-audio-3.0-tts-flash` | ✓ | Previous generation, still available |
+
+> Legacy `qwen3-tts-*` support was removed in 2.0.0 (models retired).
 
 ## Instruction Control Examples
 
@@ -119,7 +134,7 @@ On gateway platforms, when the agent calls `text_to_speech`, the gateway automat
 
 ### CLI / WebUI
 
-CLI's `/voice tts` is handled by the framework (auto-TTS with 4000-char truncation). WebUI does not support inline plugin audio — use the browser's built-in 🔊 button instead.
+CLI's `/voice tts` is handled by the framework (auto-TTS with 4000-char truncation). WebUI plays audio inline via `/api/media`.
 
 ### Script Utility
 
@@ -145,19 +160,19 @@ Load in Hermes: `/skill bailian-tts-usage`
 ## API Endpoint
 
 ```
-POST https://{workspace_id}.cn-beijing.maas.aliyuncs.com/api/v1/services/aigc/multimodal-generation/generation
+POST https://{workspace_id}.cn-beijing.maas.aliyuncs.com/api/v1/services/audio/tts/SpeechSynthesizer
 ```
 
 Request body:
 
 ```json
 {
-    "model": "qwen3-tts-instruct-flash",
+    "model": "qwen-audio-3.1-tts-flash",
     "input": {
         "text": "Text to synthesize",
-        "voice": "Maia",
-        "language_type": "Chinese",
-        "instructions": "Speak in a gentle tone"
+        "voice": "baiqinglan_v3.1",
+        "format": "mp3",
+        "instruction": "Speak in a gentle tone"
     }
 }
 ```
@@ -166,21 +181,26 @@ Response:
 
 ```json
 {
-    "request_id": "0e6ea46e-1332-9ed3-8f94-0e8de08f72e5",
+    "request_id": "461e4371-7286-9639-9905-c0bd93b38dd5",
     "output": {
+        "finish_reason": "stop",
         "audio": {
-            "url": "http://dashscope-xxx.oss-cn-beijing.aliyuncs.com/..."
+            "url": "http://dashscope-result-bj.oss-cn-beijing.aliyuncs.com/....mp3?...",
+            "id": "audio_461e4371-7286-9639-9905-c0bd93b38dd5",
+            "expires_at": 1790855968
         }
     },
     "usage": {
-        "characters": 22
+        "input_tokens": 28,
+        "output_tokens": 64,
+        "total_tokens": 92
     }
 }
 ```
 
 ## Pricing
 
-Billed per input character, output is free. Qwen3-TTS-Instruct-Flash ≈ **¥1 / 10,000 characters**.
+`qwen-audio-3.1-tts-flash` is billed by **tokens** (input + output; see the `usage` field in responses).
 
 Reference: [Aliyun Bailian Pricing](https://help.aliyun.com/zh/model-studio/billing-for-model-studio)
 
@@ -222,6 +242,7 @@ hermes-bailian-tts/
 
 - [Hermes Custom TTS Integration Skill](https://github.com/nesquena/hermes-agent) — General TTS framework integration guide
 - [Aliyun Bailian TTS Documentation](https://help.aliyun.com/zh/model-studio/tts-model/)
+- [Qwen-Audio-TTS HTTP API Reference](https://docs.bailian.console.aliyun.com/zh/model-studio/qwen-audio-tts-http-api)
 - [QQ Bot API Documentation](https://bot.q.qq.com/wiki/develop/api-v2/)
 
 ## License

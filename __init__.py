@@ -1,12 +1,18 @@
 """
-Bailian (百炼) TTS Provider — Qwen-TTS via DashScope HTTP API.
+Bailian (百炼) TTS Provider — Qwen-Audio-TTS via the DashScope SpeechSynthesizer HTTP API.
 
 Environment variables:
-  - DASHSCOPE_API_KEY  : Aliyun Bailian / DashScope API key (required)
-  - BAILIAN_WORKSPACE_ID: Aliyun Bailian workspace / business-space ID (required)
+  - DASHSCOPE_API_KEY        : Aliyun Bailian / DashScope API key (required)
+  - BAILIAN_WORKSPACE_ID     : Aliyun Bailian workspace / business-space ID (required)
+  - BAILIAN_TTS_INSTRUCTIONS : optional natural-language instruction text
 
-Default model: qwen3-tts-instruct-flash  (HTTP, supports instruction control)
-Default voice: Maia
+Default model: qwen-audio-3.1-tts-flash
+Default voice: baiqinglan_v3.1  (白清岚 — bright & pure Mandarin female)
+
+Notes:
+  - Qwen-Audio-TTS is served only in the Beijing region on the workspace-scoped
+    domain, and returns audio natively (mp3/wav) — no local transcoding needed.
+  - The legacy qwen3-tts model family was removed in this version (vendor-retired).
 """
 
 from __future__ import annotations
@@ -14,7 +20,8 @@ from __future__ import annotations
 import json
 import logging
 import os
-import time
+import shutil
+import subprocess
 from typing import Any, Dict, List, Optional
 from urllib import request, error as urllib_error
 
@@ -26,23 +33,27 @@ logger = logging.getLogger(__name__)
 # Constants
 # ---------------------------------------------------------------------------
 
-DEFAULT_MODEL = "qwen3-tts-instruct-flash"
-DEFAULT_VOICE = "Maia"
-DEFAULT_LANGUAGE = "Chinese"  # 可根据文本语言自动切换
+DEFAULT_MODEL = "qwen-audio-3.1-tts-flash"
+DEFAULT_VOICE = "baiqinglan_v3.1"
 
-# Endpoint template. {workspace_id} is replaced at runtime.
-ENDPOINT_TEMPLATE = (
+# Endpoint template — {workspace_id} is replaced at runtime.
+ENDPOINT = (
     "https://{workspace_id}.cn-beijing.maas.aliyuncs.com"
-    "/api/v1/services/aigc/multimodal-generation/generation"
+    "/api/v1/services/audio/tts/SpeechSynthesizer"
 )
 
-# ---------------------------------------------------------------------------
-# Provider
-# ---------------------------------------------------------------------------
+
+def _looks_like_mp3(data: bytes) -> bool:
+    """Cheap sanity check: ID3 tag or MPEG frame sync at the start."""
+    if len(data) < 3:
+        return False
+    if data[:3] == b"ID3":
+        return True
+    return data[0] == 0xFF and (data[1] & 0xE0) == 0xE0
 
 
 class BailianTTSProvider(TTSProvider):
-    """TTS backend for Aliyun Bailian (百炼) / DashScope Qwen-TTS API."""
+    """TTS backend for Aliyun Bailian (百炼) / DashScope Qwen-Audio-TTS."""
 
     @property
     def name(self) -> str:
@@ -50,7 +61,7 @@ class BailianTTSProvider(TTSProvider):
 
     @property
     def display_name(self) -> str:
-        return "Bailian (百炼 Qwen-TTS)"
+        return "Bailian (百炼 Qwen-Audio-TTS)"
 
     def is_available(self) -> bool:
         """Check that required env vars are set."""
@@ -59,28 +70,39 @@ class BailianTTSProvider(TTSProvider):
         return bool(api_key and ws_id)
 
     def list_voices(self) -> List[Dict[str, Any]]:
-        """Return available Qwen-TTS system voices."""
+        """Curated qwen-audio-3.1-tts-flash system voices (full list:
+        https://docs.bailian.console.aliyun.com/zh/model-studio/qwen-audio-tts-voice-list)."""
         return [
-            {"id": "Maia", "display": "Maia — 温柔女声", "language": "zh-CN", "gender": "female"},
-            {"id": "Cherry", "display": "Cherry — 活力女声", "language": "zh-CN", "gender": "female"},
-            {"id": "Stella", "display": "Stella — 沉稳女声", "language": "zh-CN", "gender": "female"},
-            {"id": "Harry", "display": "Harry — 儒雅男声", "language": "zh-CN", "gender": "male"},
-            {"id": "Liam", "display": "Liam — 阳光男声", "language": "zh-CN", "gender": "male"},
-            {"id": "Emma", "display": "Emma — 知性女声 (英文)", "language": "en-US", "gender": "female"},
-            {"id": "Henry", "display": "Henry — 磁性男声 (英文)", "language": "en-US", "gender": "male"},
+            {"id": "baiqinglan_v3.1", "display": "白清岚 — 明亮清纯女声 (默认)", "language": "zh-CN", "gender": "female"},
+            {"id": "anxiaolan_v3.1", "display": "安小岚 — 清甜纯净女声", "language": "zh-CN", "gender": "female"},
+            {"id": "yuxiaoyun_v3.1", "display": "于小云 — 元气亲切女声", "language": "zh-CN", "gender": "female"},
+            {"id": "xiaxiaochen_v3.1", "display": "夏小晨 — 元气明亮女声", "language": "zh-CN", "gender": "female"},
+            {"id": "qiaoxiaojiao_v3.1", "display": "乔小娇 — 俏丽可爱女声", "language": "zh-CN", "gender": "female"},
+            {"id": "wenhuaiqing_v3.1", "display": "温怀清 — 清亮柔和女声", "language": "zh-CN", "gender": "female"},
+            {"id": "xieshurou_v3.1", "display": "谢舒柔 — 柔和知性女声", "language": "zh-CN", "gender": "female"},
+            {"id": "xuyuyuan_v3.1", "display": "许玉远 — 知性成熟女声", "language": "zh-CN", "gender": "female"},
+            {"id": "xiaoxingzhi_v3.1", "display": "萧行之 — 端庄贵气女声", "language": "zh-CN", "gender": "female"},
+            {"id": "yeqinghe_v3.1", "display": "叶清禾 — 亲切温柔女声", "language": "zh-CN", "gender": "female"},
+            {"id": "anyuqing_v3.1", "display": "安语晴 — 甜美女声", "language": "zh-CN", "gender": "female"},
+            {"id": "anmingyuan_v3.1", "display": "安明远 — 清亮自然男声", "language": "zh-CN", "gender": "male"},
+            {"id": "huozhuoshi_v3.1", "display": "霍拙石 — 清亮男声", "language": "zh-CN", "gender": "male"},
+            {"id": "xunanchuan_v3.1", "display": "许南川 — 多方言/多语种男声", "language": "zh-CN", "gender": "male"},
+            {"id": "longanhuan_v3.1", "display": "龙安欢 — 多方言/多语种女声", "language": "zh-CN", "gender": "female"},
+            {"id": "Emily_v3.1", "display": "Emily — 英式女声 (英文)", "language": "en-GB", "gender": "female"},
+            {"id": "Ava_v3.1", "display": "Ava — 美式女声 (英文)", "language": "en-US", "gender": "female"},
         ]
 
     def list_models(self) -> List[Dict[str, Any]]:
-        """Return available Qwen-TTS models."""
+        """Return available models (Qwen-Audio-TTS family only)."""
         return [
             {
-                "id": "qwen3-tts-instruct-flash",
-                "display": "Qwen3-TTS Instruct Flash (指令控制)",
+                "id": "qwen-audio-3.1-tts-flash",
+                "display": "Qwen-Audio-3.1-TTS Flash (指令控制, 推荐)",
                 "max_text_length": 4000,
             },
             {
-                "id": "qwen3-tts-flash",
-                "display": "Qwen3-TTS Flash",
+                "id": "qwen-audio-3.0-tts-flash",
+                "display": "Qwen-Audio-3.0-TTS Flash (指令控制)",
                 "max_text_length": 4000,
             },
         ]
@@ -95,7 +117,7 @@ class BailianTTSProvider(TTSProvider):
         return {
             "name": self.display_name,
             "badge": "paid",
-            "tag": "阿里云百炼 — Qwen-TTS 中文语音合成",
+            "tag": "阿里云百炼 — Qwen-Audio-TTS 中文语音合成",
             "env_vars": [
                 {
                     "key": "DASHSCOPE_API_KEY",
@@ -134,27 +156,38 @@ class BailianTTSProvider(TTSProvider):
         voice = voice or DEFAULT_VOICE
         model = model or DEFAULT_MODEL
 
-        endpoint = ENDPOINT_TEMPLATE.format(workspace_id=workspace_id)
+        want_format = (format or "mp3").lower()
+        if want_format not in ("mp3", "wav"):
+            want_format = "mp3"
 
-        payload = {
-            "model": model,
-            "input": {
-                "text": text,
-                "voice": voice,
-                "language_type": DEFAULT_LANGUAGE,
-            },
+        instructions = (
+            extra.get("instructions")
+            or os.environ.get("BAILIAN_TTS_INSTRUCTIONS", "").strip()
+        )
+
+        endpoint = ENDPOINT.format(workspace_id=workspace_id)
+
+        input_params: Dict[str, Any] = {
+            "text": text,
+            "voice": voice,
+            "format": want_format,
         }
+        if instructions:
+            input_params["instruction"] = instructions
+        if speed is not None:
+            try:
+                rate = float(speed)
+            except (TypeError, ValueError):
+                rate = 1.0
+            if 0.5 <= rate <= 2.0 and rate != 1.0:
+                input_params["rate"] = rate
 
-        # Optional: instruction control for instruct-flash models
-        if "instruct" in model:
-            instructions = extra.get("instructions") or os.environ.get(
-                "BAILIAN_TTS_INSTRUCTIONS", ""
-            ).strip()
-            if instructions:
-                payload["input"]["instructions"] = instructions
+        payload = {"model": model, "input": input_params}
 
-        logger.info("Bailian TTS: requesting synthesis (model=%s, voice=%s, chars=%d)",
-                     model, voice, len(text))
+        logger.info(
+            "Bailian TTS: requesting synthesis (model=%s, voice=%s, format=%s, chars=%d)",
+            model, voice, want_format, len(text),
+        )
 
         # ── Step 1: POST synthesis request ──
         req = request.Request(
@@ -168,7 +201,7 @@ class BailianTTSProvider(TTSProvider):
         )
 
         try:
-            with request.urlopen(req, timeout=30) as resp:
+            with request.urlopen(req, timeout=60) as resp:
                 body = resp.read().decode("utf-8")
         except urllib_error.HTTPError as exc:
             err_body = exc.read().decode("utf-8", errors="replace")
@@ -197,66 +230,75 @@ class BailianTTSProvider(TTSProvider):
         # ── Step 2: Download the audio file ──
         logger.info("Bailian TTS: downloading audio from %s...", audio_url[:80])
         try:
-            with request.urlopen(request.Request(audio_url), timeout=30) as resp:
+            with request.urlopen(request.Request(audio_url), timeout=60) as resp:
                 audio_data = resp.read()
         except Exception as exc:
             raise RuntimeError(f"Bailian TTS audio download failed: {exc}") from exc
 
-        # ── Step 3: Write audio and convert format if needed ──
-        # Bailian API always returns WAV. Save as WAV on a temp path,
-        # then convert to MP3 at output_path. This guarantees the final
-        # file at output_path always exists (either MP3 or WAV-as-fallback).
-        import shutil
-        import subprocess
+        if not audio_data:
+            raise RuntimeError("Bailian TTS audio download returned 0 bytes")
 
-        wav_path = output_path + ".wav"
+        # ── Step 3: Write audio (native format; ffmpeg only as a safety net) ──
+        tmp_path = f"{output_path}.{want_format}"
 
-        with open(wav_path, "wb") as f:
+        with open(tmp_path, "wb") as f:
             f.write(audio_data)
-        logger.info("Bailian TTS: wrote %d bytes WAV -> %s", len(audio_data), wav_path)
+        logger.info("Bailian TTS: received %d bytes (%s)", len(audio_data), want_format)
 
-        want_format = (format or "").lower()
-        converted = False
-
-        if want_format in ("mp3",):
+        needs_convert = want_format == "mp3" and not _looks_like_mp3(audio_data)
+        if not needs_convert:
+            os.replace(tmp_path, output_path)
+            logger.info(
+                "Bailian TTS: wrote %s (%d bytes)",
+                output_path, os.path.getsize(output_path),
+            )
+        else:
+            logger.warning(
+                "Bailian TTS: response does not look like MP3 (first bytes: %r), "
+                "attempting ffmpeg conversion", audio_data[:4],
+            )
+            converted = False
             ffmpeg = shutil.which("ffmpeg")
             if ffmpeg:
                 try:
                     subprocess.run(
-                        [ffmpeg, "-y", "-i", wav_path,
+                        [ffmpeg, "-y", "-i", tmp_path,
                          "-ac", "1",                    # mono for voice
                          "-codec:a", "libmp3lame",
                          "-q:a", "5",                   # VBR ~80kbps avg
                          output_path],
                         capture_output=True, timeout=30, check=True,
                     )
-                    logger.info("Bailian TTS: WAV→MP3 done (%d bytes -> %d bytes)",
-                                len(audio_data), os.path.getsize(output_path))
+                    logger.info(
+                        "Bailian TTS: ffmpeg conversion done (%d bytes -> %d bytes)",
+                        len(audio_data), os.path.getsize(output_path),
+                    )
                     converted = True
                 except Exception as exc:
                     logger.warning("Bailian TTS: ffmpeg conversion failed: %s", exc)
             else:
                 logger.warning("Bailian TTS: ffmpeg not found, cannot convert to MP3")
 
-        if not converted:
-            # Fallback: copy WAV to output_path so the file always exists
-            # at the expected location.
-            import shutil as sh
-            sh.copy2(wav_path, output_path)
-            logger.info("Bailian TTS: WAV fallback -> %s (%d bytes)",
-                        output_path, os.path.getsize(output_path))
+            if not converted:
+                # Fallback: copy raw audio to output_path so the file always
+                # exists at the expected location.
+                shutil.copy2(tmp_path, output_path)
+                logger.info(
+                    "Bailian TTS: raw-format fallback -> %s (%d bytes)",
+                    output_path, os.path.getsize(output_path),
+                )
 
-        # Clean up intermediate WAV
-        try:
-            os.remove(wav_path)
-        except OSError:
-            pass
+            try:
+                os.remove(tmp_path)
+            except OSError:
+                pass
 
-        # Log usage for monitoring
-        usage = result.get("usage", {})
-        logger.debug("Bailian TTS: usage %s chars (request_id=%s)",
-                     usage.get("characters", "?"),
-                     result.get("request_id", "?"))
+        # Log usage for monitoring (token-based billing)
+        usage = result.get("usage", {}) or {}
+        logger.debug(
+            "Bailian TTS: usage=%s request_id=%s",
+            usage or "?", result.get("request_id", "?"),
+        )
 
         return output_path
 
@@ -265,8 +307,12 @@ class BailianTTSProvider(TTSProvider):
 # Plugin auto-registration
 # ---------------------------------------------------------------------------
 
+
 def register(plugin_context):
     """Called by the Hermes plugin loader to register this TTS provider."""
     provider = BailianTTSProvider()
     plugin_context.register_tts_provider(provider)
-    logger.info("Bailian TTS provider registered (models: %s)", DEFAULT_MODEL)
+    logger.info(
+        "Bailian TTS provider registered (default: %s / %s)",
+        DEFAULT_MODEL, DEFAULT_VOICE,
+    )
